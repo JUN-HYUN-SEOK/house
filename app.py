@@ -1,15 +1,16 @@
 import streamlit as st
-st.set_page_config(page_title="가족 일정 및 가계부", layout="wide")
-
 import requests
-import datetime
-import os
-import pandas as pd
-import plotly.express as px
 import json
+from datetime import datetime, timedelta
+import pytz
+import calendar
+import pandas as pd
 
 # Firebase REST API URL
 FIREBASE_URL = "https://house-75550-default-rtdb.firebaseio.com"
+
+# 한국 시간대 설정
+KST = pytz.timezone('Asia/Seoul')
 
 def get_schedules():
     """Firebase에서 스케줄 데이터 가져오기"""
@@ -261,176 +262,157 @@ def show_monthly_statistics(finances, fixed_expenses):
                     else:
                         st.info("변동지출 내역이 없습니다.")
 
-def main():
-    # 탭 생성
-    tab1, tab2, tab3 = st.tabs(["📅 일정 관리", "💰 가계부", "⚙️ 고정지출 설정"])
+def create_calendar(events):
+    # 현재 선택된 년월 가져오기
+    selected_date = st.session_state.get('selected_date', datetime.today())
+    col1, col2 = st.columns([6,1])
+    with col1:
+        selected_date = st.date_input("월 선택", selected_date)
+    st.session_state.selected_date = selected_date
     
-    # 일정 관리 탭
-    with tab1:
-        st.title("가족 일정 공유 :family:")
-        
-        # 좌우 컬럼으로 분리
-        left_col, right_col = st.columns([1, 2])
-        
-        # 왼쪽 컬럼: 일정 입력 및 목록
-        with left_col:
-            # 일정 입력
-            with st.form("schedule_form"):
-                date = st.date_input("날짜 선택", datetime.datetime.now())
-                title = st.text_input("일정 제목")
-                description = st.text_area("일정 내용")
-                submitted = st.form_submit_button("일정 추가")
+    # 달력 생성
+    cal = calendar.monthcalendar(selected_date.year, selected_date.month)
+    
+    # 달력 헤더
+    cols = st.columns(7)
+    days = ['월', '화', '수', '목', '금', '토', '일']
+    for col, day in zip(cols, days):
+        col.markdown(f"**{day}**")
+    
+    # 달력 내용
+    for week in cal:
+        cols = st.columns(7)
+        for col, day in zip(cols, week):
+            if day != 0:
+                date_str = f"{selected_date.year}-{selected_date.month:02d}-{day:02d}"
                 
-                if submitted and title:
-                    schedule_data = {
-                        'date': date.strftime('%Y-%m-%d'),
-                        'title': title,
-                        'description': description,
-                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                    }
-                    if save_schedule(schedule_data):
-                        st.success("일정이 추가되었습니다!")
-                        st.rerun()
-            
-            # 일정 목록
-            st.subheader("📝 등록된 일정")
-            schedules = get_schedules()
-            if schedules:
-                for key, schedule in sorted(schedules.items(), 
-                                         key=lambda x: x[1]['date'],
-                                         reverse=True):
-                    with st.expander(f"{schedule['date']}: {schedule['title']}"):
-                        st.write(schedule['description'])
-                        if st.button("삭제", key=f"delete_schedule_{key}"):
-                            if delete_schedule(key):
-                                st.success("일정이 삭제되었습니다!")
-                                st.rerun()
-            else:
-                st.info("등록된 일정이 없습니다.")
-        
-        # 오른쪽 컬럼: 달력
-        with right_col:
-            show_calendar(schedules)
-
-    # 가계부 탭
-    with tab2:
-        st.title("가족 가계부 💰")
-        
-        # 입력 폼과 통계를 구분하기 위한 컬럼
-        input_col, stats_col = st.columns([1, 2])
-        
-        with input_col:
-            # 가계부 입력 폼
-            with st.form("finance_form"):
-                finance_date = st.date_input("날짜", datetime.datetime.now())
-                finance_type = st.selectbox("유형", ["수입", "지출"])
-                amount = st.number_input("금액", min_value=0)
-                category = st.selectbox(
-                    "분류",
-                    ["급여", "상여금", "기타수입"] if finance_type == "수입" else 
-                    ["식비", "교통비", "주거비", "의료비", "교육비", "문화생활", "기타지출"]
-                )
-                finance_description = st.text_area("내용")
+                # 해당 날짜에 이벤트가 있는지 확인
+                has_event = any(event['date'] == date_str for event in events.values())
                 
-                if st.form_submit_button("등록"):
-                    if amount > 0:
-                        if save_finance(
-                            finance_date,
-                            category,
-                            amount,
-                            finance_description,
-                            'income' if finance_type == "수입" else 'expense'
-                        ):
-                            st.success("등록되었습니다!")
-                            st.rerun()
-                        else:
-                            st.error("등록 중 오류가 발생했습니다.")
-                    else:
-                        st.error("금액을 입력해주세요.")
-        
-        with stats_col:
-            # 가계부 통계
-            finances = get_finances()
-            fixed_expenses = get_fixed_expenses()
-            show_monthly_statistics(finances, fixed_expenses)
-        
-        # 상세 내역
-        st.subheader("📝 상세 내역")
-        if finances:
-            for key, finance in sorted(finances.items(), 
-                                     key=lambda x: x[1]['date'],
-                                     reverse=True):
-                with st.expander(
-                    f"{finance['date']} - {finance['category']} "
-                    f"({finance['amount']:,}원)"
-                ):
-                    st.write(f"유형: {'수입' if finance['type']=='income' else '지출'}")
-                    st.write(f"내용: {finance['description']}")
-                    if st.button("삭제", key=f"delete_finance_{key}"):
-                        finance_ref = f"{FIREBASE_URL}/finances/{key}.json"
-                        if requests.delete(finance_ref).status_code == 200:
-                            st.success("삭제되었습니다!")
-                            st.rerun()
-
-    # 고정지출 설정 탭
-    with tab3:
-        st.title("고정지출 설정 ⚙️")
-        
-        # 고정지출 입력
-        with st.form("fixed_expense_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                fixed_title = st.text_input("지출 항목")
-                fixed_category = st.selectbox(
-                    "분류",
-                    ["주거비", "관리비", "통신비", "보험료", "교육비", "기타고정지출"]
-                )
-            with col2:
-                fixed_amount = st.number_input("금액", min_value=0)
-                payment_day = st.number_input(
-                    "매월 결제일",
-                    min_value=1,
-                    max_value=31,
-                    value=1
-                )
-            fixed_description = st.text_area("설명")
-            
-            if st.form_submit_button("고정지출 등록"):
-                if fixed_amount > 0 and fixed_title:
-                    if save_fixed_expense(
-                        fixed_title,
-                        fixed_category,
-                        fixed_amount,
-                        payment_day,
-                        fixed_description
-                    ):
-                        st.success("고정지출이 등록되었습니다!")
-                        st.rerun()
+                # 날짜 버튼 생성 (이벤트가 있으면 노란색 배경)
+                if has_event:
+                    col.markdown(f"""
+                        <div style='background-color: #FFE5B4; padding: 10px; border-radius: 5px;'>
+                            <strong>{day}</strong>
+                            {"📅" if has_event else ""}
+                        </div>
+                    """, unsafe_allow_html=True)
                 else:
-                    st.error("항목과 금액을 입력해주세요.")
+                    if col.button(f"{day}", key=f"day_{date_str}"):
+                        st.session_state.selected_day = date_str
+                        st.session_state.show_event_form = True
+
+def show_budget_form():
+    st.subheader("💰 가계부 입력")
+    with st.form("budget_form"):
+        year_month = st.date_input("년월 선택").strftime("%Y-%m")
+        category = st.selectbox("분류", ["수입", "고정지출", "변동지출"])
+        title = st.text_input("항목")
+        amount = st.number_input("금액", min_value=0)
         
-        # 등록된 고정지출 목록
-        st.subheader("등록된 고정지출 목록")
-        fixed_expenses = get_fixed_expenses()
-        
-        if fixed_expenses:
-            total_fixed = sum(item['amount'] for item in fixed_expenses.values())
-            st.info(f"월 고정지출 총액: {total_fixed:,}원")
+        if st.form_submit_button("저장"):
+            data = {
+                "year_month": year_month,
+                "category": category,
+                "title": title,
+                "amount": amount
+            }
             
-            for key, expense in fixed_expenses.items():
-                with st.expander(
-                    f"{expense['title']} - {expense['category']} "
-                    f"({expense['amount']:,}원)"
-                ):
-                    st.write(f"결제일: 매월 {expense['payment_day']}일")
-                    st.write(f"설명: {expense['description']}")
-                    if st.button("삭제", key=f"delete_fixed_{key}"):
-                        fixed_expense_ref = f"{FIREBASE_URL}/fixed_expenses/{key}.json"
-                        if requests.delete(fixed_expense_ref).status_code == 200:
-                            st.success("삭제되었습니다!")
-                            st.rerun()
-        else:
-            st.info("등록된 고정지출이 없습니다.")
+            response = requests.post(f"{FIREBASE_URL}/budget.json", json=data)
+            if response.status_code == 200:
+                st.success("저장되었습니다!")
+                st.rerun()
+
+def show_event_form():
+    if st.session_state.get('show_event_form', False):
+        st.subheader("📅 일정 등록")
+        selected_day = st.session_state.get('selected_day', datetime.today().strftime("%Y-%m-%d"))
+        
+        with st.form("event_form"):
+            st.write(f"선택된 날짜: {selected_day}")
+            title = st.text_input("일정 제목")
+            memo = st.text_area("메모")
+            
+            if st.form_submit_button("저장"):
+                data = {
+                    "date": selected_day,
+                    "title": title,
+                    "memo": memo
+                }
+                
+                response = requests.post(f"{FIREBASE_URL}/events.json", json=data)
+                if response.status_code == 200:
+                    st.success("일정이 저장되었습니다!")
+                    st.session_state.show_event_form = False
+                    st.rerun()
+
+def show_budget_summary():
+    response = requests.get(f"{FIREBASE_URL}/budget.json")
+    if response.status_code == 200:
+        records = response.json() or {}
+        
+        if records:
+            df = pd.DataFrame.from_dict(records, orient='index')
+            selected_month = st.session_state.selected_date.strftime("%Y-%m")
+            
+            # 선택된 월의 데이터만 필터링
+            df = df[df['year_month'] == selected_month]
+            
+            if not df.empty:
+                st.subheader(f"💰 {selected_month} 가계부 요약")
+                
+                # 카테고리별 합계
+                income = df[df['category'] == '수입']['amount'].sum()
+                fixed_exp = df[df['category'] == '고정지출']['amount'].sum()
+                var_exp = df[df['category'] == '변동지출']['amount'].sum()
+                
+                col1, col2, col3, col4 = st.columns(4)
+                col1.metric("수입", f"{income:,}원")
+                col2.metric("고정지출", f"{fixed_exp:,}원")
+                col3.metric("변동지출", f"{var_exp:,}원")
+                col4.metric("잔액", f"{income - fixed_exp - var_exp:,}원")
+                
+                # 상세 내역
+                st.markdown("### 상세 내역")
+                for category in ['수입', '고정지출', '변동지출']:
+                    cat_df = df[df['category'] == category]
+                    if not cat_df.empty:
+                        st.markdown(f"#### {category}")
+                        st.dataframe(cat_df[['title', 'amount']])
+
+def main():
+    st.title("💰 우리집 가계부 & 일정")
+    
+    tab1, tab2 = st.tabs(["📅 일정관리", "💰 가계부"])
+    
+    with tab1:
+        # 일정 데이터 가져오기
+        response = requests.get(f"{FIREBASE_URL}/events.json")
+        events = response.json() or {}
+        
+        # 달력 표시
+        create_calendar(events)
+        
+        # 일정 등록 폼
+        show_event_form()
+        
+        # 일정 목록
+        st.markdown("### 📋 일정 목록")
+        for event_id, event in events.items():
+            col1, col2 = st.columns([3,1])
+            with col1:
+                st.markdown(f"""
+                    📅 {event['date']}<br>
+                    ✍️ {event['title']}
+                """, unsafe_allow_html=True)
+            with col2:
+                if st.button("삭제", key=f"del_event_{event_id}"):
+                    requests.delete(f"{FIREBASE_URL}/events/{event_id}.json")
+                    st.rerun()
+    
+    with tab2:
+        show_budget_form()
+        show_budget_summary()
 
 if __name__ == "__main__":
     main()
