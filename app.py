@@ -10,21 +10,12 @@ import plotly.express as px
 
 # Firebase 초기화
 if not firebase_admin._apps:
-    try:
-        # Streamlit Cloud에서 실행할 때
-        key_dict = st.secrets["firebase"]
-        cred = credentials.Certificate(key_dict)
-        firebase_app = initialize_app(cred, {
-            'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
-        })
-    except Exception as e:
-        # 로컬에서 실행할 때
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        key_path = os.path.join(current_dir, 'serviceAccountKey.json')
-        cred = credentials.Certificate(key_path)
-        firebase_app = initialize_app(cred, {
-            'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
-        })
+    # Streamlit Cloud에서 실행
+    key_dict = st.secrets["firebase"]
+    cred = credentials.Certificate(key_dict)
+    firebase_app = initialize_app(cred, {
+        'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
+    })
 
 # Firebase 데이터베이스 참조
 schedule_ref = db.reference('schedules')
