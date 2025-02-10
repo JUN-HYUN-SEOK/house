@@ -7,20 +7,31 @@ import os
 import firebase_admin
 import pandas as pd
 import plotly.express as px
+import json
 
 # Firebase 초기화
 if not firebase_admin._apps:
     try:
         # Streamlit Cloud에서 실행될 때
         key_dict = st.secrets["firebase"]
+        # JSON 문자열로 변환 후 다시 딕셔너리로 변환
+        if isinstance(key_dict, str):
+            key_dict = json.loads(key_dict)
+        # private_key가 이스케이프된 문자열인 경우 처리
+        if 'private_key' in key_dict:
+            key_dict['private_key'] = key_dict['private_key'].replace('\\n', '\n')
+        
         cred = credentials.Certificate(key_dict)
-    except:
+        firebase_app = initialize_app(cred, {
+            'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
+        })
+    except Exception as e:
+        st.error(f"Firebase 초기화 오류: {str(e)}")
         # 로컬에서 실행될 때
         cred = credentials.Certificate('serviceAccountKey.json')
-    
-    firebase_app = initialize_app(cred, {
-        'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
-    })
+        firebase_app = initialize_app(cred, {
+            'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
+        })
 
 # Firebase 데이터베이스 참조
 schedule_ref = db.reference('schedules')
