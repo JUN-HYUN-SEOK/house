@@ -12,10 +12,8 @@ import plotly.express as px
 if not firebase_admin._apps:
     try:
         # Streamlit Cloud에서 실행될 때
-        import os
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        key_path = os.path.join(current_dir, 'serviceAccountKey.json')
-        cred = credentials.Certificate(key_path)
+        key_dict = st.secrets["firebase"]
+        cred = credentials.Certificate(key_dict)
     except:
         # 로컬에서 실행될 때
         cred = credentials.Certificate('serviceAccountKey.json')
