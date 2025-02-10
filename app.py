@@ -1,78 +1,81 @@
 import streamlit as st
 st.set_page_config(page_title="가족 일정 및 가계부", layout="wide")
 
-from firebase_admin import credentials, initialize_app, db
+import requests
 import datetime
 import os
-import firebase_admin
 import pandas as pd
 import plotly.express as px
 import json
 
-# Firebase 초기화
-if not firebase_admin._apps:
-    cred = credentials.Certificate({
-        "type": "service_account",
-        "project_id": "house-75550",
-        "private_key": st.secrets["PRIVATE_KEY"].replace('\\n', '\n'),
-        "client_email": st.secrets["CLIENT_EMAIL"],
-        "token_uri": "https://oauth2.googleapis.com/token"
-    })
-    
-    firebase_app = initialize_app(cred, {
-        'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
-    })
-
-# Firebase 데이터베이스 참조
-schedule_ref = db.reference('schedules')
-finance_ref = db.reference('finances')
-fixed_expense_ref = db.reference('fixed_expenses')
-
-def save_schedule(date, title, description):
-    """Firebase에 일정 저장"""
-    schedule_ref.push({
-        'date': date.strftime('%Y-%m-%d'),
-        'title': title,
-        'description': description,
-        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
+# Firebase REST API URL
+FIREBASE_URL = "https://house-75550-default-rtdb.firebaseio.com"
 
 def get_schedules():
-    """Firebase에서 일정 가져오기"""
-    schedules = schedule_ref.get()
-    return schedules if schedules else {}
+    """Firebase에서 스케줄 데이터 가져오기"""
+    response = requests.get(f"{FIREBASE_URL}/schedules.json")
+    if response.status_code == 200:
+        return response.json() or {}
+    return {}
+
+def save_schedule(schedule_data):
+    """Firebase에 스케줄 데이터 저장하기"""
+    response = requests.post(f"{FIREBASE_URL}/schedules.json", json=schedule_data)
+    return response.status_code == 200
+
+def delete_schedule(schedule_id):
+    """Firebase에서 스케줄 삭제하기"""
+    response = requests.delete(f"{FIREBASE_URL}/schedules/{schedule_id}.json")
+    return response.status_code == 200
+
+def update_schedule(schedule_id, schedule_data):
+    """Firebase에서 스케줄 업데이트하기"""
+    response = requests.patch(f"{FIREBASE_URL}/schedules/{schedule_id}.json", json=schedule_data)
+    return response.status_code == 200
 
 def save_finance(date, category, amount, description, type_):
     """Firebase에 가계부 데이터 저장"""
-    finance_ref.push({
+    finance_ref = f"{FIREBASE_URL}/finances.json"
+    finance_data = {
         'date': date.strftime('%Y-%m-%d'),
         'category': category,
         'amount': amount,
         'description': description,
         'type': type_,
         'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
+    }
+    response = requests.post(finance_ref, json=finance_data)
+    return response.status_code == 200
 
 def get_finances():
     """Firebase에서 가계부 데이터 가져오기"""
-    finances = finance_ref.get()
-    return finances if finances else {}
+    finance_ref = f"{FIREBASE_URL}/finances.json"
+    response = requests.get(finance_ref)
+    if response.status_code == 200:
+        return response.json() or {}
+    return {}
 
 def save_fixed_expense(title, category, amount, payment_day, description):
     """Firebase에 고정지출 저장"""
-    fixed_expense_ref.push({
+    fixed_expense_ref = f"{FIREBASE_URL}/fixed_expenses.json"
+    fixed_expense_data = {
         'title': title,
         'category': category,
         'amount': amount,
         'payment_day': payment_day,
         'description': description,
         'created_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    })
+    }
+    response = requests.post(fixed_expense_ref, json=fixed_expense_data)
+    return response.status_code == 200
 
 def get_fixed_expenses():
     """Firebase에서 고정지출 가져오기"""
-    fixed_expenses = fixed_expense_ref.get()
-    return fixed_expenses if fixed_expenses else {}
+    fixed_expense_ref = f"{FIREBASE_URL}/fixed_expenses.json"
+    response = requests.get(fixed_expense_ref)
+    if response.status_code == 200:
+        return response.json() or {}
+    return {}
 
 def show_calendar(schedules):
     """달력에 일정 표시"""
@@ -279,9 +282,15 @@ def main():
                 submitted = st.form_submit_button("일정 추가")
                 
                 if submitted and title:
-                    save_schedule(date, title, description)
-                    st.success("일정이 추가되었습니다!")
-                    st.rerun()
+                    schedule_data = {
+                        'date': date.strftime('%Y-%m-%d'),
+                        'title': title,
+                        'description': description,
+                        'timestamp': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    }
+                    if save_schedule(schedule_data):
+                        st.success("일정이 추가되었습니다!")
+                        st.rerun()
             
             # 일정 목록
             st.subheader("📝 등록된 일정")
@@ -293,9 +302,9 @@ def main():
                     with st.expander(f"{schedule['date']}: {schedule['title']}"):
                         st.write(schedule['description'])
                         if st.button("삭제", key=f"delete_schedule_{key}"):
-                            schedule_ref.child(key).delete()
-                            st.success("일정이 삭제되었습니다!")
-                            st.rerun()
+                            if delete_schedule(key):
+                                st.success("일정이 삭제되었습니다!")
+                                st.rerun()
             else:
                 st.info("등록된 일정이 없습니다.")
         
@@ -325,15 +334,17 @@ def main():
                 
                 if st.form_submit_button("등록"):
                     if amount > 0:
-                        save_finance(
+                        if save_finance(
                             finance_date,
                             category,
                             amount,
                             finance_description,
                             'income' if finance_type == "수입" else 'expense'
-                        )
-                        st.success("등록되었습니다!")
-                        st.rerun()
+                        ):
+                            st.success("등록되었습니다!")
+                            st.rerun()
+                        else:
+                            st.error("등록 중 오류가 발생했습니다.")
                     else:
                         st.error("금액을 입력해주세요.")
         
@@ -356,9 +367,10 @@ def main():
                     st.write(f"유형: {'수입' if finance['type']=='income' else '지출'}")
                     st.write(f"내용: {finance['description']}")
                     if st.button("삭제", key=f"delete_finance_{key}"):
-                        finance_ref.child(key).delete()
-                        st.success("삭제되었습니다!")
-                        st.rerun()
+                        finance_ref = f"{FIREBASE_URL}/finances/{key}.json"
+                        if requests.delete(finance_ref).status_code == 200:
+                            st.success("삭제되었습니다!")
+                            st.rerun()
 
     # 고정지출 설정 탭
     with tab3:
@@ -385,15 +397,15 @@ def main():
             
             if st.form_submit_button("고정지출 등록"):
                 if fixed_amount > 0 and fixed_title:
-                    save_fixed_expense(
+                    if save_fixed_expense(
                         fixed_title,
                         fixed_category,
                         fixed_amount,
                         payment_day,
                         fixed_description
-                    )
-                    st.success("고정지출이 등록되었습니다!")
-                    st.rerun()
+                    ):
+                        st.success("고정지출이 등록되었습니다!")
+                        st.rerun()
                 else:
                     st.error("항목과 금액을 입력해주세요.")
         
@@ -413,9 +425,10 @@ def main():
                     st.write(f"결제일: 매월 {expense['payment_day']}일")
                     st.write(f"설명: {expense['description']}")
                     if st.button("삭제", key=f"delete_fixed_{key}"):
-                        fixed_expense_ref.child(key).delete()
-                        st.success("삭제되었습니다!")
-                        st.rerun()
+                        fixed_expense_ref = f"{FIREBASE_URL}/fixed_expenses/{key}.json"
+                        if requests.delete(fixed_expense_ref).status_code == 200:
+                            st.success("삭제되었습니다!")
+                            st.rerun()
         else:
             st.info("등록된 고정지출이 없습니다.")
 
