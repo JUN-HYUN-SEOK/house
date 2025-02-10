@@ -10,9 +10,14 @@ import plotly.express as px
 
 # Firebase 초기화
 if not firebase_admin._apps:
-    # Streamlit Cloud에서 실행
-    key_dict = st.secrets["firebase"]
-    cred = credentials.Certificate(key_dict)
+    try:
+        # Streamlit Cloud에서 실행될 때
+        key_dict = st.secrets["firebase"]
+        cred = credentials.Certificate(key_dict)
+    except:
+        # 로컬에서 실행될 때
+        cred = credentials.Certificate('serviceAccountKey.json')
+    
     firebase_app = initialize_app(cred, {
         'databaseURL': 'https://house-75550-default-rtdb.firebaseio.com'
     })
