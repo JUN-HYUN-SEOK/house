@@ -141,26 +141,43 @@ def show_budget_summary():
                     if not cat_df.empty:
                         st.markdown(f"#### {category}")
                         
+                        # 데이터프레임에 있는 실제 컬럼 확인
+                        available_columns = ['year_month', 'category', 'title', 'amount']
+                        if 'date' in cat_df.columns:
+                            available_columns.insert(0, 'date')
+                        if 'memo' in cat_df.columns:
+                            available_columns.append('memo')
+                            
                         # 표시할 데이터 정리
-                        display_df = cat_df[['date', 'title', 'amount', 'memo']].copy()
-                        display_df.columns = ['날짜', '항목', '금액', '메모']
+                        display_df = cat_df[available_columns].copy()
+                        
+                        # 컬럼명 한글로 변경
+                        column_mapping = {
+                            'date': '날짜',
+                            'year_month': '년월',
+                            'category': '분류',
+                            'title': '항목',
+                            'amount': '금액',
+                            'memo': '메모'
+                        }
+                        display_df.columns = [column_mapping[col] for col in display_df.columns]
+                        
+                        # 금액 포맷팅
                         display_df['금액'] = display_df['금액'].apply(lambda x: f"{x:,}원")
                         
                         st.dataframe(display_df, use_container_width=True)
                 
                 # 엑셀 다운로드 버튼
                 if st.button("엑셀 다운로드"):
-                    # 엑셀 파일 생성
                     output = BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         for category in ['수입', '고정지출', '변동지출']:
                             cat_df = df[df['category'] == category]
                             if not cat_df.empty:
-                                display_df = cat_df[['date', 'title', 'amount', 'memo']].copy()
-                                display_df.columns = ['날짜', '항목', '금액', '메모']
+                                display_df = cat_df[available_columns].copy()
+                                display_df.columns = [column_mapping[col] for col in display_df.columns]
                                 display_df.to_excel(writer, sheet_name=category, index=False)
                     
-                    # 다운로드 버튼
                     output.seek(0)
                     st.download_button(
                         label="📥 엑셀 파일 다운로드",
