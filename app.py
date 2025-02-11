@@ -5,6 +5,7 @@ import calendar
 import pandas as pd
 import plotly.express as px
 import pytz
+from io import BytesIO
 
 # Firebase URL
 FIREBASE_URL = "https://house-75550-default-rtdb.firebaseio.com"
@@ -55,17 +56,28 @@ def create_calendar(events):
 def show_budget_form():
     st.subheader("💰 가계부 입력")
     with st.form("budget_form"):
-        year_month = st.date_input("년월 선택").strftime("%Y-%m")
+        year_month = st.date_input("날짜 선택")
         category = st.selectbox("분류", ["수입", "고정지출", "변동지출"])
-        title = st.text_input("항목")
+        
+        # 카테고리별 상세 항목
+        if category == "수입":
+            title = st.selectbox("항목", ["급여", "보너스", "기타수입"])
+        elif category == "고정지출":
+            title = st.selectbox("항목", ["월세", "관리비", "통신비", "보험료", "교통비", "기타고정지출"])
+        else:  # 변동지출
+            title = st.selectbox("항목", ["식비", "생활용품", "의류", "의료비", "문화생활", "기타변동지출"])
+            
         amount = st.number_input("금액", min_value=0)
+        memo = st.text_input("메모")
         
         if st.form_submit_button("저장"):
             data = {
-                "year_month": year_month,
+                "date": year_month.strftime("%Y-%m-%d"),
+                "year_month": year_month.strftime("%Y-%m"),
                 "category": category,
                 "title": title,
-                "amount": amount
+                "amount": amount,
+                "memo": memo
             }
             
             response = requests.post(f"{FIREBASE_URL}/budget.json", json=data)
@@ -128,7 +140,34 @@ def show_budget_summary():
                     cat_df = df[df['category'] == category]
                     if not cat_df.empty:
                         st.markdown(f"#### {category}")
-                        st.dataframe(cat_df[['title', 'amount']])
+                        
+                        # 표시할 데이터 정리
+                        display_df = cat_df[['date', 'title', 'amount', 'memo']].copy()
+                        display_df.columns = ['날짜', '항목', '금액', '메모']
+                        display_df['금액'] = display_df['금액'].apply(lambda x: f"{x:,}원")
+                        
+                        st.dataframe(display_df, use_container_width=True)
+                
+                # 엑셀 다운로드 버튼
+                if st.button("엑셀 다운로드"):
+                    # 엑셀 파일 생성
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                        for category in ['수입', '고정지출', '변동지출']:
+                            cat_df = df[df['category'] == category]
+                            if not cat_df.empty:
+                                display_df = cat_df[['date', 'title', 'amount', 'memo']].copy()
+                                display_df.columns = ['날짜', '항목', '금액', '메모']
+                                display_df.to_excel(writer, sheet_name=category, index=False)
+                    
+                    # 다운로드 버튼
+                    output.seek(0)
+                    st.download_button(
+                        label="📥 엑셀 파일 다운로드",
+                        data=output,
+                        file_name=f'가계부_{selected_month}.xlsx',
+                        mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    )
 
 def main():
     st.title("💰 우리집 가계부 & 일정")
