@@ -1,6 +1,6 @@
-streamlit
-pandas
-requests
-plotly
-pytz
-openpyxl
+streamlit==1.31.1
+pandas==2.2.0
+requests==2.31.0
+plotly==5.18.0
+pytz==2024.1
+openpyxl==3.1.2
