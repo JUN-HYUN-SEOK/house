@@ -146,7 +146,7 @@ def show_budget_summary():
                             col1, col2, col3, col4 = st.columns([3,2,1,1])
                             
                             with col1:
-                                st.write(f"📅 {row['date']}")
+                                st.write(f"📅 {row.get('date', row['year_month'])}")
                                 st.write(f"✍️ {row['title']}")
                             
                             with col2:
@@ -171,8 +171,13 @@ def show_budget_summary():
                     with st.form(key="edit_form"):
                         edit_data = st.session_state.edit_data
                         
-                        new_date = st.date_input("날짜", 
-                            datetime.strptime(edit_data['date'], "%Y-%m-%d"))
+                        # date가 없으면 year_month 사용
+                        initial_date = datetime.strptime(
+                            edit_data.get('date', edit_data['year_month'] + "-01"), 
+                            "%Y-%m-%d"
+                        )
+                        new_date = st.date_input("날짜", initial_date)
+                        
                         new_category = st.selectbox("분류", 
                             ["수입", "고정지출", "변동지출"], 
                             index=["수입", "고정지출", "변동지출"].index(edit_data['category']))
