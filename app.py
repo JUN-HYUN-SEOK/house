@@ -115,6 +115,7 @@ def show_budget_summary():
         
         if records:
             df = pd.DataFrame.from_dict(records, orient='index')
+            df['record_id'] = df.index  # 레코드 ID 저장
             selected_month = st.session_state.selected_date.strftime("%Y-%m")
             
             # 선택된 월의 데이터만 필터링
@@ -141,31 +142,80 @@ def show_budget_summary():
                     if not cat_df.empty:
                         st.markdown(f"#### {category}")
                         
-                        # 데이터프레임에 있는 실제 컬럼 확인
-                        available_columns = ['year_month', 'category', 'title', 'amount']
-                        if 'date' in cat_df.columns:
-                            available_columns.insert(0, 'date')
-                        if 'memo' in cat_df.columns:
-                            available_columns.append('memo')
+                        for _, row in cat_df.iterrows():
+                            col1, col2, col3, col4 = st.columns([3,2,1,1])
                             
-                        # 표시할 데이터 정리
-                        display_df = cat_df[available_columns].copy()
+                            with col1:
+                                st.write(f"📅 {row['date']}")
+                                st.write(f"✍️ {row['title']}")
+                            
+                            with col2:
+                                st.write(f"💰 {row['amount']:,}원")
+                                if 'memo' in row:
+                                    st.write(f"📝 {row['memo']}")
+                            
+                            with col3:
+                                if st.button("수정", key=f"edit_{row['record_id']}"):
+                                    st.session_state.editing = row['record_id']
+                                    st.session_state.edit_data = row.to_dict()
+                            
+                            with col4:
+                                if st.button("삭제", key=f"del_{row['record_id']}"):
+                                    if requests.delete(f"{FIREBASE_URL}/budget/{row['record_id']}.json").status_code == 200:
+                                        st.success("삭제되었습니다!")
+                                        st.rerun()
+                
+                # 수정 폼
+                if 'editing' in st.session_state:
+                    st.markdown("### ✏️ 항목 수정")
+                    with st.form(key="edit_form"):
+                        edit_data = st.session_state.edit_data
                         
-                        # 컬럼명 한글로 변경
-                        column_mapping = {
-                            'date': '날짜',
-                            'year_month': '년월',
-                            'category': '분류',
-                            'title': '항목',
-                            'amount': '금액',
-                            'memo': '메모'
-                        }
-                        display_df.columns = [column_mapping[col] for col in display_df.columns]
+                        new_date = st.date_input("날짜", 
+                            datetime.strptime(edit_data['date'], "%Y-%m-%d"))
+                        new_category = st.selectbox("분류", 
+                            ["수입", "고정지출", "변동지출"], 
+                            index=["수입", "고정지출", "변동지출"].index(edit_data['category']))
                         
-                        # 금액 포맷팅
-                        display_df['금액'] = display_df['금액'].apply(lambda x: f"{x:,}원")
+                        # 카테고리별 항목 선택
+                        if new_category == "수입":
+                            options = ["급여", "보너스", "기타수입"]
+                        elif new_category == "고정지출":
+                            options = ["월세", "관리비", "통신비", "보험료", "교통비", "기타고정지출"]
+                        else:
+                            options = ["식비", "생활용품", "의류", "의료비", "문화생활", "기타변동지출"]
                         
-                        st.dataframe(display_df, use_container_width=True)
+                        new_title = st.selectbox("항목", options, 
+                            index=options.index(edit_data['title']) if edit_data['title'] in options else 0)
+                        new_amount = st.number_input("금액", 
+                            value=float(edit_data['amount']))
+                        new_memo = st.text_input("메모", 
+                            value=edit_data.get('memo', ''))
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.form_submit_button("수정 완료"):
+                                update_data = {
+                                    "date": new_date.strftime("%Y-%m-%d"),
+                                    "year_month": new_date.strftime("%Y-%m"),
+                                    "category": new_category,
+                                    "title": new_title,
+                                    "amount": new_amount,
+                                    "memo": new_memo
+                                }
+                                
+                                if requests.patch(f"{FIREBASE_URL}/budget/{st.session_state.editing}.json", 
+                                    json=update_data).status_code == 200:
+                                    st.success("수정되었습니다!")
+                                    del st.session_state.editing
+                                    del st.session_state.edit_data
+                                    st.rerun()
+                        
+                        with col2:
+                            if st.form_submit_button("취소"):
+                                del st.session_state.editing
+                                del st.session_state.edit_data
+                                st.rerun()
                 
                 # 엑셀 다운로드 버튼
                 if st.button("엑셀 다운로드"):
@@ -174,8 +224,8 @@ def show_budget_summary():
                         for category in ['수입', '고정지출', '변동지출']:
                             cat_df = df[df['category'] == category]
                             if not cat_df.empty:
-                                display_df = cat_df[available_columns].copy()
-                                display_df.columns = [column_mapping[col] for col in display_df.columns]
+                                display_df = cat_df[['date', 'title', 'amount', 'memo']].copy()
+                                display_df.columns = ['날짜', '항목', '금액', '메모']
                                 display_df.to_excel(writer, sheet_name=category, index=False)
                     
                     output.seek(0)
