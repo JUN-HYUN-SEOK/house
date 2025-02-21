@@ -37,21 +37,29 @@ def create_calendar(events):
             if day != 0:
                 date_str = f"{selected_date.year}-{selected_date.month:02d}-{day:02d}"
                 
-                # 해당 날짜에 이벤트가 있는지 확인
-                has_event = any(event['date'] == date_str for event in events.values())
+                # 해당 날짜의 이벤트들 찾기
+                day_events = [event for event in events.values() if event['date'] == date_str]
+                has_event = len(day_events) > 0
                 
                 # 날짜 버튼 생성 (이벤트가 있으면 노란색 배경)
                 if has_event:
-                    col.markdown(f"""
-                        <div style='background-color: #FFE5B4; padding: 10px; border-radius: 5px;'>
-                            <strong>{day}</strong>
-                            {"📅" if has_event else ""}
-                        </div>
-                    """, unsafe_allow_html=True)
+                    with col:
+                        if st.button(f"{day} 📅", key=f"view_{date_str}"):
+                            st.session_state.viewing_date = date_str
+                            st.session_state.viewing_events = day_events
                 else:
                     if col.button(f"{day}", key=f"day_{date_str}"):
                         st.session_state.selected_day = date_str
                         st.session_state.show_event_form = True
+                
+                # 선택된 날짜의 이벤트 표시
+                if st.session_state.get('viewing_date') == date_str:
+                    with st.popover(f"{date_str} 일정"):
+                        for event in st.session_state.viewing_events:
+                            st.write(f"✍️ {event['title']}")
+                            if event.get('memo'):
+                                st.write(f"📝 {event['memo']}")
+                            st.divider()
 
 def show_budget_form():
     st.subheader("💰 가계부 입력")
@@ -262,35 +270,54 @@ def main():
         # 일정 등록 폼
         show_event_form()
         
-        # 일정 목록
-        st.markdown("### 📋 일정 목록")
-        
-        # 현재 한국 시간 가져오기
+        # 현재/과거 일정 분리
         current_date = datetime.now(KST).date()
         
-        # 날짜순으로 정렬하기 위해 리스트로 변환
-        sorted_events = sorted(
-            [
-                {**event, 'id': event_id} 
-                for event_id, event in events.items()
-                if datetime.strptime(event['date'], "%Y-%m-%d").date() >= current_date  # 현재 날짜 이후의 일정만 필터링
-            ],
-            key=lambda x: x['date']
-        )
+        col1, col2 = st.columns(2)
         
-        for event in sorted_events:
-            col1, col2 = st.columns([3,1])
-            weekday = get_korean_weekday(event['date'])
-            with col1:
+        with col1:
+            st.markdown("### 📋 앞으로의 일정")
+            future_events = sorted(
+                [
+                    {**event, 'id': event_id} 
+                    for event_id, event in events.items()
+                    if datetime.strptime(event['date'], "%Y-%m-%d").date() >= current_date
+                ],
+                key=lambda x: x['date']
+            )
+            
+            for event in future_events:
+                weekday = get_korean_weekday(event['date'])
                 st.markdown(f"""
                     📅 {event['date']} ({weekday})<br>
                     ✍️ {event['title']}
                 """, unsafe_allow_html=True)
-            with col2:
                 if st.button("삭제", key=f"del_event_{event['id']}"):
                     requests.delete(f"{FIREBASE_URL}/events/{event['id']}.json")
                     st.rerun()
-    
+        
+        with col2:
+            st.markdown("### 📋 지난 일정")
+            past_events = sorted(
+                [
+                    {**event, 'id': event_id} 
+                    for event_id, event in events.items()
+                    if datetime.strptime(event['date'], "%Y-%m-%d").date() < current_date
+                ],
+                key=lambda x: x['date'],
+                reverse=True  # 최근 날짜순
+            )
+            
+            for event in past_events:
+                weekday = get_korean_weekday(event['date'])
+                st.markdown(f"""
+                    📅 {event['date']} ({weekday})<br>
+                    ✍️ {event['title']}
+                """, unsafe_allow_html=True)
+                if st.button("삭제", key=f"del_past_{event['id']}"):
+                    requests.delete(f"{FIREBASE_URL}/events/{event['id']}.json")
+                    st.rerun()
+
     with tab2:
         show_budget_form()
         show_budget_summary()
