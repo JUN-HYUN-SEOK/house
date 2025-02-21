@@ -241,6 +241,11 @@ def show_budget_summary():
                         mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
                     )
 
+def get_korean_weekday(date_str):
+    date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+    weekdays = ['월', '화', '수', '목', '금', '토', '일']
+    return weekdays[date_obj.weekday()]
+
 def main():
     st.title("💰 우리집 가계부 & 일정")
     
@@ -259,16 +264,31 @@ def main():
         
         # 일정 목록
         st.markdown("### 📋 일정 목록")
-        for event_id, event in events.items():
+        
+        # 현재 한국 시간 가져오기
+        current_date = datetime.now(KST).date()
+        
+        # 날짜순으로 정렬하기 위해 리스트로 변환
+        sorted_events = sorted(
+            [
+                {**event, 'id': event_id} 
+                for event_id, event in events.items()
+                if datetime.strptime(event['date'], "%Y-%m-%d").date() >= current_date  # 현재 날짜 이후의 일정만 필터링
+            ],
+            key=lambda x: x['date']
+        )
+        
+        for event in sorted_events:
             col1, col2 = st.columns([3,1])
+            weekday = get_korean_weekday(event['date'])
             with col1:
                 st.markdown(f"""
-                    📅 {event['date']}<br>
+                    📅 {event['date']} ({weekday})<br>
                     ✍️ {event['title']}
                 """, unsafe_allow_html=True)
             with col2:
-                if st.button("삭제", key=f"del_event_{event_id}"):
-                    requests.delete(f"{FIREBASE_URL}/events/{event_id}.json")
+                if st.button("삭제", key=f"del_event_{event['id']}"):
+                    requests.delete(f"{FIREBASE_URL}/events/{event['id']}.json")
                     st.rerun()
     
     with tab2:
