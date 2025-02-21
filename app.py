@@ -41,25 +41,25 @@ def create_calendar(events):
                 day_events = [event for event in events.values() if event['date'] == date_str]
                 has_event = len(day_events) > 0
                 
-                # 날짜 버튼 생성 (이벤트가 있으면 노란색 배경)
-                if has_event:
-                    with col:
+                with col:
+                    # 날짜 버튼 생성 (이벤트가 있으면 노란색 배경)
+                    if has_event:
                         if st.button(f"{day} 📅", key=f"view_{date_str}"):
                             st.session_state.viewing_date = date_str
                             st.session_state.viewing_events = day_events
-                else:
-                    if col.button(f"{day}", key=f"day_{date_str}"):
-                        st.session_state.selected_day = date_str
-                        st.session_state.show_event_form = True
-                
-                # 선택된 날짜의 이벤트 표시
-                if st.session_state.get('viewing_date') == date_str:
-                    with st.popover(f"{date_str} 일정"):
-                        for event in st.session_state.viewing_events:
-                            st.write(f"✍️ {event['title']}")
-                            if event.get('memo'):
-                                st.write(f"📝 {event['memo']}")
-                            st.divider()
+                    else:
+                        if st.button(f"{day}", key=f"day_{date_str}"):
+                            st.session_state.selected_day = date_str
+                            st.session_state.show_event_form = True
+                    
+                    # 선택된 날짜의 이벤트 표시
+                    if st.session_state.get('viewing_date') == date_str:
+                        with st.expander(f"{date_str} 일정", expanded=True):
+                            for event in st.session_state.viewing_events:
+                                st.write(f"✍️ {event['title']}")
+                                if event.get('memo'):
+                                    st.write(f"📝 {event['memo']}")
+                                st.divider()
 
 def show_budget_form():
     st.subheader("💰 가계부 입력")
